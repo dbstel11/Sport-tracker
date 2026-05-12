@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Sport Tracker" />
+  <meta name="theme-color" content="#0d0d0d" />
+  <title>Sport Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&display=swap" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: #0d0d0d; color: #fff; font-family: 'DM Mono', monospace; -webkit-tap-highlight-color: transparent; }
+    body { overscroll-behavior: none; }
+    input, select, button, textarea { font-family: inherit; }
+    select { -webkit-appearance: none; appearance: none; }
+    #root { max-width: 480px; margin: 0 auto; min-height: 100vh; position: relative; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ── Data ──────────────────────────────────────────────────────────────────────
+
+const DEFAULT_EXERCISES = [
+  "Abdos", "Back lever", "Curl biceps", "Développé militaire", "Dips",
+  "Fentes", "Front lever", "Gainage", "Hip thrust", "L-sit", "Muscle-up",
+  "Pistol squat", "Planche", "Pompes", "Rowing", "Squat", "Traction"
+];
+
+const STORAGE_KEY = "sport_tracker_v3";
+
+function loadData() {
+  try {
+    const d = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+    return {
+      sessions: d.sessions || [],
+      goals: d.goals || [],
+      programs: d.programs || [],
+      customExercises: d.customExercises || []
+    };
+  } catch { return { sessions: [], goals: [], programs: [], customExercises: [] }; }
+}
+
+function saveData(data) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function allExercises(custom) {
+  return [...new Set([...DEFAULT_EXERCISES, ...custom])].sort((a, b) => a.localeCompare(b, "fr"));
+}
+
+function formatDate(iso) {
+  return new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function getTodayISO() {
+  return new Date().toISOString().split("T")[0];
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+
+const S = {
+  input: {
+    width: "100%", background: "#111", border: "1px solid #333", borderRadius: 8,
+    padding: "10px 12px", color: "#ddd", fontSize: 14, fontFamily: "'DM Mono', monospace",
+    outline: "none", WebkitAppearance: "none", appearance: "none"
+  },
+  label: {
+    display: "block", color: "#555", fontSize: 11,
+    textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6
+  },
+  smallBtn: {
+    background: "none", border: "1px solid #444", borderRadius: 8, padding: "6px 12px",
+    color: "#888", fontSize: 12, cursor: "pointer",
+    textTransform: "uppercase", letterSpacing: "0.05em"
+  },
+  card: { background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 12 },
+  goldBtn: {
+    width: "100%", background: "#e8c84a", color: "#111", border: "none",
+    borderRadius: 10, padding: "13px", fontWeight: 700, fontSize: 13,
+    cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.05em"
+  }
+};
+
+// ── ExercisePicker ────────────────────────────────────────────────────────────
+
+function ExercisePicker({ value, onChange, exercises, onAddCustom }) {
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+  const inputRef = useRef(null);
+
+  useEffect(() => { if (adding && inputRef.current) inputRef.current.focus(); }, [adding]);
+
+  function handleAdd() {
+    const name = newName.trim();
+    if (!name) return;
+    onAddCustom(name);
+    onChange(name);
+    setNewName(""); setAdding(false);
+  }
+
+  if (adding) return (
+    <div style={{ display: "flex", gap: 6, flex: 1 }}>
+      <input ref={inputRef} value={newName} onChange={e => setNewName(e.target.value)}
+        onKeyDown={e => e.key === "Enter" && handleAdd()}
+        placeholder="Nom de l'exercice..." style={{ ...S.input, flex: 1 }} />
+      <button onClick={handleAdd} style={{ background: "#e8c84a", border: "none", borderRadius: 8, padding: "0 12px", color: "#111", fontWeight: 700, cursor: "pointer", fontSize: 16, flexShrink: 0 }}>✓</button>
+      <button onClick={() => { setAdding(false); setNewName(""); }} style={{ background: "none", border: "1px solid #333", borderRadius: 8, padding: "0 10px", color: "#888", cursor: "pointer", flexShrink: 0 }}>✕</button>
+    </div>
+  );
+
+  return (
+    <div style={{ display: "flex", gap: 6, flex: 1 }}>
+      <select value={value} onChange={e => onChange(e.target.value)} style={{ ...S.input, flex: 1 }}>
+        {exercises.map(ex => <option key={ex} value={ex}>{ex}</option>)}
+      </select>
+      <button onClick={() => setAdding(true)} title="Ajouter un exercice"
+        style={{ background: "none", border: "1px solid #333", borderRadius: 8, padding: "0 12px", color: "#e8c84a", cursor: "pointer", fontSize: 18, flexShrink: 0, fontWeight: 700 }}>+</button>
+    </div>
+  );
+}
+
+// ── Shared UI ─────────────────────────────────────────────────────────────────
+
+function Header({ title, sub, noMargin }) {
+  return (
+    <div style={{ marginBottom: noMargin ? 0 : 24 }}>
+      <h1 style={{ margin: 0, fontSize: 30, fontFamily: "'Bebas Neue', Impact, sans-serif", color: "#fff", letterSpacing: "0.05em", lineHeight: 1 }}>{title}</h1>
+      {sub && <div style={{ color: "#555", fontSize: 12, marginTop: 4 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function Empty({ icon, text }) {
+  return (
+    <div style={{ textAlign: "center", padding: "56px 24px", color: "#444", fontSize: 13 }}>
+      <div style={{ fontSize: 44, marginBottom: 14 }}>{icon || "💪"}</div>{text}
+    </div>
+  );
+}
+
+function StatCard({ label, value, small }) {
+  return (
+    <div style={{ ...S.card, padding: "16px 14px" }}>
+      <div style={{ color: "#555", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{label}</div>
+      <div style={{ color: "#e8c84a", fontSize: small ? 15 : 28, fontFamily: small ? "'DM Mono'" : "'Bebas Neue', Impact, sans-serif", lineHeight: 1 }}>{value}</div>
+    </div>
+  );
+}
+
+// ── TabBar ────────────────────────────────────────────────────────────────────
+
+function TabBar({ tab, setTab }) {
+  const tabs = [
+    { id: "log",      label: "Séance",    icon: "⚡" },
+    { id: "programs", label: "Circuits",  icon: "🏋️" },
+    { id: "history",  label: "Historique",icon: "📋" },
+    { id: "goals",    label: "Objectifs", icon: "🎯" },
+    { id: "stats",    label: "Stats",     icon: "📈" },
+  ];
+  return (
+    <div style={{ display: "flex", background: "#111", borderTop: "1px solid #222", position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100, paddingBottom: "env(safe-area-inset-bottom, 10px)" }}>
+      {tabs.map(t => (
+        <button key={t.id} onClick={() => setTab(t.id)} style={{
+          flex: 1, background: "none", border: "none", padding: "10px 2px 8px",
+          cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+          color: tab === t.id ? "#e8c84a" : "#555", transition: "color 0.15s"
+        }}>
+          <span style={{ fontSize: 19 }}>{t.icon}</span>
+          <span style={{ fontSize: 9, letterSpacing: "0.04em", textTransform: "uppercase" }}>{t.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── PROGRAMS TAB ──────────────────────────────────────────────────────────────
+
+function ProgramsTab({ data, setData }) {
+  const [view, setView] = useState("list");
+  const [activeProgram, setActiveProgram] = useState(null);
+
+  function addCustomExercise(name) {
+    if (data.customExercises.includes(name) || DEFAULT_EXERCISES.includes(name)) return;
+    const updated = { ...data, customExercises: [...data.customExercises, name] };
+    setData(updated); saveData(updated);
+  }
+
+  function saveProgram(program) {
+    const exists = data.programs.find(p => p.id === program.id);
+    const programs = exists
+      ? data.programs.map(p => p.id === program.id ? program : p)
+      : [...data.programs, program];
+    const updated = { ...data, programs };
+    setData(updated); saveData(updated);
+    setView("list");
+  }
+
+  function deleteProgram(id) {
+    const updated = { ...data, programs: data.programs.filter(p => p.id !== id) };
+    setData(updated); saveData(updated);
+  }
+
+  function startProgram(program) {
+    setActiveProgram(program);
+    setView("run");
+  }
+
+  function finishSession(session) {
+    const updated = { ...data, sessions: [session, ...data.sessions] };
+    setData(updated); saveData(updated);
+    setView("list"); setActiveProgram(null);
+  }
+
+  if (view === "create") return (
+    <ProgramEditor data={data} onSave={saveProgram} onCancel={() => setView("list")} onAddCustom={addCustomExercise} />
+  );
+
+  if (view === "run" && activeProgram) return (
+    <ProgramRunner program={activeProgram} onFinish={finishSession} onCancel={() => { setView("list"); setActiveProgram(null); }} />
+  );
+
+  return (
+    <div style={{ padding: "28px 16px 110px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
+        <Header title="Circuits" sub="Tes programmes d'entraînement" noMargin />
+        <button onClick={() => setView("create")} style={S.smallBtn}>+ Créer</button>
+      </div>
+
+      {!data.programs.length && <Empty icon="🏋️" text="Crée ton premier circuit !" />}
+
+      {data.programs.map(p => (
+        <div key={p.id} style={{ ...S.card, marginBottom: 12, overflow: "hidden" }}>
+          <div style={{ padding: "16px 16px 12px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+              <div>
+                <div style={{ fontFamily: "'Bebas Neue', Impact, sans-serif", fontSize: 22, color: "#fff", letterSpacing: "0.04em" }}>{p.name}</div>
+                <div style={{ color: "#555", fontSize: 12, marginTop: 2 }}>{p.exercises.length} exercice{p.exercises.length > 1 ? "s" : ""}</div>
+              </div>
+              <button onClick={() => deleteProgram(p.id)} style={{ background: "none", border: "none", color: "#3a3a3a", fontSize: 18, cursor: "pointer" }}>✕</button>
+            </div>
+            {p.exercises.map((ex, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #1e1e1e" }}>
+                <span style={{ color: "#bbb", fontSize: 13 }}>{ex.name}</span>
+                <span style={{ color: "#555", fontSize: 12 }}>
+                  {ex.sets ? `${ex.sets}×` : ""}{ex.reps ? `${ex.reps}` : ""}{ex.weight ? ` · ${ex.weight}kg` : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+          <button onClick={() => startProgram(p)} style={{
+            width: "100%", background: "#e8c84a", color: "#111", border: "none",
+            padding: "13px", fontWeight: 700, fontSize: 13, cursor: "pointer",
+            textTransform: "uppercase", letterSpacing: "0.06em"
+          }}>▶ Lancer ce circuit</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Program Editor ────────────────────────────────────────────────────────────
+
+function ProgramEditor({ data, onSave, onCancel, onAddCustom }) {
+  const [name, setName] = useState("");
+  const [items, setItems] = useState([{ name: allExercises(data.customExercises)[0], sets: "3", reps: "10", weight: "" }]);
+
+  function addItem() {
+    setItems(prev => [...prev, { name: allExercises(data.customExercises)[0], sets: "3", reps: "10", weight: "" }]);
+  }
+
+  function removeItem(i) { setItems(prev => prev.filter((_, idx) => idx !== i)); }
+
+  function updateItem(i, field, val) {
+    setItems(prev => prev.map((it, idx) => idx === i ? { ...it, [field]: val } : it));
+  }
+
+  function handleSave() {
+    if (!name.trim() || !items.length) return;
+    onSave({ id: Date.now(), name: name.trim(), exercises: items });
+  }
+
+  return (
+    <div style={{ padding: "28px 16px 110px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <Header title="Nouveau circuit" noMargin />
+        <button onClick={onCancel} style={S.smallBtn}>Annuler</button>
+      </div>
+
+      <div style={{ marginBottom: 20 }}>
+        <label style={S.label}>Nom du circuit</label>
+        <input value={name} onChange={e => setName(e.target.value)}
+          placeholder="Ex : Circuit jambes 1" style={{ ...S.input, fontSize: 15 }} autoFocus />
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <span style={{ color: "#888", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em" }}>Exercices</span>
+        <button onClick={addItem} style={S.smallBtn}>+ Ajouter</button>
+      </div>
+
+      {items.map((it, i) => (
+        <div key={i} style={{ ...S.card, padding: 14, marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+            <ExercisePicker
+              value={it.name}
+              onChange={val => updateItem(i, "name", val)}
+              exercises={allExercises(data.customExercises)}
+              onAddCustom={onAddCustom}
+            />
+            <button onClick={() => removeItem(i)} style={{ background: "none", border: "none", color: "#555", fontSize: 20, cursor: "pointer", flexShrink: 0 }}>✕</button>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <label style={S.label}>Séries</label>
+              <input type="number" inputMode="numeric" value={it.sets}
+                onChange={e => updateItem(i, "sets", e.target.value)} placeholder="3" style={S.input} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={S.label}>Reps</label>
+              <input type="number" inputMode="numeric" value={it.reps}
+                onChange={e => updateItem(i, "reps", e.target.value)} placeholder="10" style={S.input} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={S.label}>Kg</label>
+              <input type="number" inputMode="decimal" value={it.weight}
+                onChange={e => updateItem(i, "weight", e.target.value)} placeholder="BW" style={S.input} />
+            </div>
+          </div>
+        </div>
+      ))}
+
+      <button onClick={handleSave} style={{ ...S.goldBtn, marginTop: 8 }}>
+        Enregistrer le circuit
+      </button>
+    </div>
+  );
+}
+
+// ── Program Runner ────────────────────────────────────────────────────────────
+
+function ProgramRunner({ program, onFinish, onCancel }) {
+  const [logs, setLogs] = useState(() =>
+    program.exercises.map(ex => ({
+      exercise: ex.name,
+      target: { sets: ex.sets, reps: ex.reps, weight: ex.weight },
+      sets: Array.from({ length: parseInt(ex.sets) || 1 }, () => ({
+        reps: ex.reps || "", weight: ex.weight || "", done: false
+      }))
+    }))
+  );
+  const [note, setNote] = useState("");
+
+  function updateSet(exIdx, setIdx, field, val) {
+    setLogs(prev => prev.map((log, i) =>
+      i !== exIdx ? log : {
+        ...log,
+        sets: log.sets.map((s, j) => j !== setIdx ? s : { ...s, [field]: val })
+      }
+    ));
+  }
+
+  function toggleSet(exIdx, setIdx) {
+    setLogs(prev => prev.map((log, i) =>
+      i !== exIdx ? log : {
+        ...log,
+        sets: log.sets.map((s, j) => j !== setIdx ? s : { ...s, done: !s.done })
+      }
+    ));
+  }
+
+  function addSet(exIdx) {
+    setLogs(prev => prev.map((log, i) =>
+      i !== exIdx ? log : {
+        ...log,
+        sets: [...log.sets, { reps: log.target.reps || "", weight: log.target.weight || "", done: false }]
+      }
+    ));
+  }
+
+  const totalSets = logs.reduce((acc, l) => acc + l.sets.length, 0);
+  const doneSets  = logs.reduce((acc, l) => acc + l.sets.filter(s => s.done).length, 0);
+  const progress  = totalSets > 0 ? Math.round((doneSets / totalSets) * 100) : 0;
+
+  function handleFinish() {
+    const sessionSets = [];
+    logs.forEach(log => {
+      log.sets.filter(s => s.done || s.reps || s.weight).forEach(s => {
+        sessionSets.push({ exercise: log.exercise, reps: s.reps, weight: s.weight, note: "" });
+      });
+    });
+    onFinish({
+      id: Date.now(),
+      date: getTodayISO(),
+      note: `${program.name}${note ? " · " + note : ""}`,
+      sets: sessionSets
+    });
+  }
+
+  return (
+    <div style={{ padding: "28px 16px 110px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+        <Header title={program.name} noMargin />
+        <button onClick={onCancel} style={S.smallBtn}>Quitter</button>
+      </div>
+
+      {/* Barre de progression */}
+      <div style={{ marginBottom: 22 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+          <span style={{ color: "#555", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em" }}>Progression</span>
+          <span style={{ color: "#e8c84a", fontSize: 12 }}>{doneSets}/{totalSets} séries · {progress}%</span>
+        </div>
+        <div style={{ height: 6, background: "#222", borderRadius: 3, overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${progress}%`, background: "#e8c84a", borderRadius: 3, transition: "width 0.3s ease" }} />
+        </div>
+      </div>
+
+      {/* Exercices */}
+      {logs.map((log, exIdx) => {
+        const allDone = log.sets.every(s => s.done);
+        return (
+          <div key={exIdx} style={{ ...S.card, border: `1px solid ${allDone ? "#2d4a1a" : "#2a2a2a"}`, marginBottom: 12, overflow: "hidden" }}>
+            <div style={{ padding: "12px 14px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontFamily: "'Bebas Neue', Impact, sans-serif", fontSize: 19, color: allDone ? "#6abf3a" : "#fff", letterSpacing: "0.04em" }}>{log.exercise}</div>
+                <div style={{ color: "#555", fontSize: 11, marginTop: 2 }}>
+                  Cible : {log.target.sets ? `${log.target.sets}×` : ""}{log.target.reps ? `${log.target.reps} reps` : ""}{log.target.weight ? ` · ${log.target.weight}kg` : ""}
+                </div>
+              </div>
+              {allDone && <span style={{ fontSize: 22 }}>✅</span>}
+            </div>
+
+            <div style={{ padding: "0 14px 12px" }}>
+              {log.sets.map((s, setIdx) => (
+                <div key={setIdx} style={{
+                  display: "flex", alignItems: "center", gap: 8, marginBottom: 8,
+                  padding: "8px 10px",
+                  background: s.done ? "#162210" : "#111",
+                  borderRadius: 8, border: `1px solid ${s.done ? "#2d4a1a" : "#222"}`,
+                  transition: "background 0.2s"
+                }}>
+                  <button onClick={() => toggleSet(exIdx, setIdx)} style={{
+                    width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
+                    border: `2px solid ${s.done ? "#6abf3a" : "#444"}`,
+                    background: s.done ? "#6abf3a" : "none",
+                    color: "#111", fontSize: 13, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center"
+                  }}>{s.done ? "✓" : ""}</button>
+
+                  <span style={{ color: "#555", fontSize: 12, flexShrink: 0, minWidth: 20 }}>S{setIdx + 1}</span>
+
+                  <div style={{ flex: 1 }}>
+                    <input type="number" inputMode="numeric" value={s.reps}
+                      onChange={e => updateSet(exIdx, setIdx, "reps", e.target.value)}
+                      placeholder="reps"
+                      style={{ ...S.input, padding: "6px 8px", fontSize: 13, textAlign: "center" }} />
+                  </div>
+                  <span style={{ color: "#444", fontSize: 12, flexShrink: 0 }}>×</span>
+                  <div style={{ flex: 1 }}>
+                    <input type="number" inputMode="decimal" value={s.weight}
+                      onChange={e => updateSet(exIdx, setIdx, "weight", e.target.value)}
+                      placeholder="kg"
+                      style={{ ...S.input, padding: "6px 8px", fontSize: 13, textAlign: "center" }} />
+                  </div>
+                </div>
+              ))}
+
+              <button onClick={() => addSet(exIdx)} style={{ ...S.smallBtn, fontSize: 11, padding: "5px 10px" }}>
+                + Série
+              </button>
+            </div>
+          </div>
+        );
+      })}
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={S.label}>Note (optionnel)</label>
+        <input value={note} onChange={e => setNote(e.target.value)}
+          placeholder="Ressenti, conditions..." style={S.input} />
+      </div>
+
+      <button onClick={handleFinish} style={{
+        ...S.goldBtn,
+        background: progress === 100 ? "#e8c84a" : "#252525",
+        color: progress === 100 ? "#111" : "#666",
+      }}>
+        {progress === 100 ? "✓ Terminer et enregistrer" : `Terminer quand même (${progress}%)`}
+      </button>
+    </div>
+  );
+}
+
+// ── LOG TAB ───────────────────────────────────────────────────────────────────
+
+function LogTab({ data, setData }) {
+  const [sets, setSets] = useState([{ exercise: allExercises(data.customExercises)[0], reps: "", weight: "", note: "" }]);
+  const [sessionNote, setSessionNote] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  function addCustomExercise(name) {
+    if (data.customExercises.includes(name) || DEFAULT_EXERCISES.includes(name)) return;
+    const updated = { ...data, customExercises: [...data.customExercises, name] };
+    setData(updated); saveData(updated);
+  }
+
+  function addSet() {
+    setSets(prev => [...prev, { exercise: allExercises(data.customExercises)[0], reps: "", weight: "", note: "" }]);
+  }
+
+  function removeSet(i) { setSets(prev => prev.filter((_, idx) => idx !== i)); }
+
+  function updateSet(i, field, val) {
+    setSets(prev => prev.map((s, idx) => idx === i ? { ...s, [field]: val } : s));
+  }
+
+  function saveSession() {
+    const validSets = sets.filter(s => s.reps || s.weight);
+    if (!validSets.length) return;
+    const session = { id: Date.now(), date: getTodayISO(), note: sessionNote, sets: validSets };
+    const updated = { ...data, sessions: [session, ...data.sessions] };
+    setData(updated); saveData(updated);
+    setSets([{ exercise: allExercises(data.customExercises)[0], reps: "", weight: "", note: "" }]);
+    setSessionNote("");
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  }
+
+  return (
+    <div style={{ padding: "28px 16px 110px" }}>
+      <Header title="Nouvelle séance" sub={formatDate(new Date().toISOString())} />
+
+      <div style={{ marginBottom: 16 }}>
+        <label style={S.label}>Note de séance</label>
+        <input value={sessionNote} onChange={e => setSessionNote(e.target.value)}
+          placeholder="Ex : Bonne forme, repos 60s..." style={S.input} />
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <span style={{ color: "#888", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em" }}>Exercices</span>
+        <button onClick={addSet} style={S.smallBtn}>+ Série</button>
+      </div>
+
+      {sets.map((s, i) => (
+        <div key={i} style={{ ...S.card, padding: 14, marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+            <ExercisePicker value={s.exercise} onChange={val => updateSet(i, "exercise", val)}
+              exercises={allExercises(data.customExercises)} onAddCustom={addCustomExercise} />
+            <button onClick={() => removeSet(i)} style={{ background: "none", border: "none", color: "#555", fontSize: 20, cursor: "pointer", flexShrink: 0 }}>✕</button>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <div style={{ flex: 1 }}>
+              <label style={S.label}>Reps</label>
+              <input type="number" inputMode="numeric" value={s.reps}
+                onChange={e => updateSet(i, "reps", e.target.value)} placeholder="12" style={S.input} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={S.label}>Poids (kg)</label>
+              <input type="number" inputMode="decimal" value={s.weight}
+                onChange={e => updateSet(i, "weight", e.target.value)} placeholder="BW" style={S.input} />
+            </div>
+          </div>
+          <input value={s.note} onChange={e => updateSet(i, "note", e.target.value)}
+            placeholder="Note optionnelle..." style={{ ...S.input, fontSize: 12, color: "#888" }} />
+        </div>
+      ))}
+
+      <button onClick={saveSession} style={{
+        width: "100%", background: saved ? "#2d5a2d" : "#e8c84a",
+        color: saved ? "#4caf50" : "#111", border: "none", borderRadius: 12,
+        padding: "16px", fontSize: 14, fontWeight: 700, letterSpacing: "0.06em",
+        cursor: "pointer", marginTop: 8, textTransform: "uppercase", transition: "background 0.3s, color 0.3s"
+      }}>
+        {saved ? "✓ Séance enregistrée !" : "Enregistrer la séance"}
+      </button>
+    </div>
+  );
+}
+
+// ── HISTORY TAB ───────────────────────────────────────────────────────────────
+
+function HistoryTab({ data, setData }) {
+  const [expanded, setExpanded] = useState(null);
+
+  function deleteSession(id) {
+    const updated = { ...data, sessions: data.sessions.filter(s => s.id !== id) };
+    setData(updated); saveData(updated); setExpanded(null);
+  }
+
+  if (!data.sessions.length) return (
+    <div style={{ padding: "28px 16px 110px" }}>
+      <Header title="Historique" sub="Tes séances passées" />
+      <Empty text="Aucune séance encore. Lance-toi !" />
+    </div>
+  );
+
+  return (
+    <div style={{ padding: "28px 16px 110px" }}>
+      <Header title="Historique" sub={`${data.sessions.length} séance${data.sessions.length > 1 ? "s" : ""}`} />
+      {data.sessions.map(s => (
+        <div key={s.id} style={{ ...S.card, marginBottom: 10, overflow: "hidden" }}>
+          <div onClick={() => setExpanded(expanded === s.id ? null : s.id)}
+            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", cursor: "pointer" }}>
+            <div>
+              <div style={{ color: "#e8c84a", fontSize: 13, fontWeight: 700 }}>{formatDate(s.date)}</div>
+              <div style={{ color: "#666", fontSize: 12, marginTop: 3 }}>
+                {s.sets.length} exercice{s.sets.length > 1 ? "s" : ""}{s.note ? ` · ${s.note}` : ""}
+              </div>
+            </div>
+            <span style={{ color: "#444", fontSize: 18 }}>{expanded === s.id ? "▴" : "▾"}</span>
+          </div>
+          {expanded === s.id && (
+            <div style={{ borderTop: "1px solid #222", padding: "12px 16px" }}>
+              {s.sets.map((set, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #1e1e1e" }}>
+                  <span style={{ color: "#ccc", fontSize: 13 }}>{set.exercise}</span>
+                  <span style={{ color: "#e8c84a", fontSize: 12 }}>
+                    {set.reps ? `${set.reps} reps` : ""}{set.reps && set.weight ? " · " : ""}{set.weight ? `${set.weight} kg` : ""}
+                  </span>
+                </div>
+              ))}
+              <button onClick={() => deleteSession(s.id)} style={{ ...S.smallBtn, marginTop: 14, color: "#c0392b", borderColor: "#c0392b33" }}>Supprimer</button>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── GOALS TAB ─────────────────────────────────────────────────────────────────
+
+function GoalsTab({ data, setData }) {
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ exercise: allExercises(data.customExercises)[0], target: "", unit: "reps", deadline: "" });
+
+  function addCustomExercise(name) {
+    if (data.customExercises.includes(name) || DEFAULT_EXERCISES.includes(name)) return;
+    const updated = { ...data, customExercises: [...data.customExercises, name] };
+    setData(updated); saveData(updated);
+  }
+
+  function addGoal() {
+    if (!form.target) return;
+    const updated = { ...data, goals: [...data.goals, { id: Date.now(), ...form, done: false }] };
+    setData(updated); saveData(updated);
+    setAdding(false);
+    setForm({ exercise: allExercises(data.customExercises)[0], target: "", unit: "reps", deadline: "" });
+  }
+
+  function toggleGoal(id) {
+    const updated = { ...data, goals: data.goals.map(g => g.id === id ? { ...g, done: !g.done } : g) };
+    setData(updated); saveData(updated);
+  }
+
+  function deleteGoal(id) {
+    const updated = { ...data, goals: data.goals.filter(g => g.id !== id) };
+    setData(updated); saveData(updated);
+  }
+
+  const active = data.goals.filter(g => !g.done);
+  const done   = data.goals.filter(g => g.done);
+
+  return (
+    <div style={{ padding: "28px 16px 110px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
+        <Header title="Objectifs" sub="Ce que tu vises" noMargin />
+        <button onClick={() => setAdding(!adding)} style={S.smallBtn}>{adding ? "Annuler" : "+ Objectif"}</button>
+      </div>
+
+      {adding && (
+        <div style={{ ...S.card, border: "1px solid #e8c84a33", padding: 16, marginBottom: 16 }}>
+          <label style={S.label}>Exercice</label>
+          <div style={{ marginBottom: 10 }}>
+            <ExercisePicker value={form.exercise} onChange={val => setForm({ ...form, exercise: val })}
+              exercises={allExercises(data.customExercises)} onAddCustom={addCustomExercise} />
+          </div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <div style={{ flex: 1 }}>
+              <label style={S.label}>Cible</label>
+              <input type="number" inputMode="numeric" value={form.target}
+                onChange={e => setForm({ ...form, target: e.target.value })} placeholder="10" style={S.input} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={S.label}>Unité</label>
+              <select value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} style={S.input}>
+                <option value="reps">reps</option>
+                <option value="kg">kg</option>
+                <option value="sec">sec</option>
+                <option value="min">min</option>
+              </select>
+            </div>
+          </div>
+          <label style={S.label}>Échéance (optionnel)</label>
+          <input type="date" value={form.deadline} onChange={e => setForm({ ...form, deadline: e.target.value })}
+            style={{ ...S.input, marginBottom: 14 }} />
+          <button onClick={addGoal} style={S.goldBtn}>Ajouter l'objectif</button>
+        </div>
+      )}
+
+      {!data.goals.length && !adding && <Empty text="Fixe-toi un premier objectif !" />}
+      {active.map(g => <GoalCard key={g.id} g={g} onToggle={toggleGoal} onDelete={deleteGoal} />)}
+      {done.length > 0 && (
+        <>
+          <div style={{ color: "#444", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", margin: "20px 0 10px" }}>Atteints</div>
+          {done.map(g => <GoalCard key={g.id} g={g} onToggle={toggleGoal} onDelete={deleteGoal} />)}
+        </>
+      )}
+    </div>
+  );
+}
+
+function GoalCard({ g, onToggle, onDelete }) {
+  return (
+    <div style={{ ...S.card, border: `1px solid ${g.done ? "#2d5a2d" : "#2a2a2a"}`, padding: "14px 16px", marginBottom: 10, display: "flex", alignItems: "center", gap: 12 }}>
+      <button onClick={() => onToggle(g.id)} style={{
+        width: 28, height: 28, borderRadius: "50%",
+        border: `2px solid ${g.done ? "#4caf50" : "#444"}`,
+        background: g.done ? "#4caf50" : "none",
+        color: "#111", fontSize: 14, cursor: "pointer", flexShrink: 0,
+        display: "flex", alignItems: "center", justifyContent: "center"
+      }}>{g.done ? "✓" : ""}</button>
+      <div style={{ flex: 1 }}>
+        <div style={{ color: g.done ? "#4caf50" : "#ccc", fontSize: 14, textDecoration: g.done ? "line-through" : "none" }}>{g.exercise}</div>
+        <div style={{ color: "#e8c84a", fontSize: 12, marginTop: 2 }}>
+          {g.target} {g.unit}{g.deadline ? ` · avant ${formatDate(g.deadline)}` : ""}
+        </div>
+      </div>
+      <button onClick={() => onDelete(g.id)} style={{ background: "none", border: "none", color: "#3a3a3a", fontSize: 20, cursor: "pointer" }}>✕</button>
+    </div>
+  );
+}
+
+// ── STATS TAB ─────────────────────────────────────────────────────────────────
+
+function StatsTab({ data }) {
+  const { sessions, goals } = data;
+  const totalSets = sessions.reduce((acc, s) => acc + s.sets.length, 0);
+
+  const exCount = {};
+  sessions.forEach(s => s.sets.forEach(set => { exCount[set.exercise] = (exCount[set.exercise] || 0) + 1; }));
+  const topEx = Object.entries(exCount).sort((a, b) => b[1] - a[1])[0];
+
+  const weeks = [0, 0, 0, 0];
+  const now = new Date();
+  sessions.forEach(s => {
+    const diff = Math.floor((now - new Date(s.date)) / (1000 * 60 * 60 * 24 * 7));
+    if (diff < 4) weeks[diff]++;
+  });
+  const maxWeek = Math.max(...weeks, 1);
+
+  const bests = {};
+  sessions.forEach(s => s.sets.forEach(set => {
+    if (!set.reps && !set.weight) return;
+    if (!bests[set.exercise]) bests[set.exercise] = { reps: 0, weight: 0 };
+    if (set.reps) bests[set.exercise].reps = Math.max(bests[set.exercise].reps, parseInt(set.reps) || 0);
+    if (set.weight) bests[set.exercise].weight = Math.max(bests[set.exercise].weight, parseFloat(set.weight) || 0);
+  }));
+
+  return (
+    <div style={{ padding: "28px 16px 110px" }}>
+      <Header title="Stats" sub="Ta progression" />
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+        <StatCard label="Séances" value={sessions.length} />
+        <StatCard label="Séries total" value={totalSets} />
+        <StatCard label="Exercice favori" value={topEx ? topEx[0] : "—"} small />
+        <StatCard label="Objectifs atteints" value={`${goals.filter(g => g.done).length}/${goals.length}`} />
+      </div>
+
+      <div style={{ ...S.card, padding: 16, marginBottom: 16 }}>
+        <div style={{ color: "#555", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 14 }}>Séances — 4 dernières semaines</div>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 64 }}>
+          {weeks.map((w, i) => (
+            <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+              <div style={{ width: "100%", background: w > 0 ? "#e8c84a" : "#1e1e1e", borderRadius: 5, height: `${(w / maxWeek) * 48 + (w > 0 ? 6 : 2)}px`, transition: "height 0.4s ease" }} />
+              <span style={{ color: "#444", fontSize: 10 }}>S-{i}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {Object.keys(bests).length > 0 && (
+        <div style={{ ...S.card, padding: 16 }}>
+          <div style={{ color: "#555", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>Records personnels</div>
+          {Object.entries(bests).sort((a, b) => a[0].localeCompare(b[0], "fr")).map(([ex, b]) => (
+            <div key={ex} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #1e1e1e" }}>
+              <span style={{ color: "#bbb", fontSize: 13 }}>{ex}</span>
+              <span style={{ color: "#e8c84a", fontSize: 12 }}>
+                {b.reps ? `${b.reps} reps` : ""}{b.reps && b.weight ? " · " : ""}{b.weight ? `${b.weight} kg` : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!sessions.length && <Empty text="Enregistre des séances pour voir tes stats !" />}
+    </div>
+  );
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
+
+function App() {
+  const [tab, setTab] = useState("programs");
+  const [data, setData] = useState(loadData);
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#0d0d0d", color: "#fff" }}>
+      {tab === "log"      && <LogTab      data={data} setData={setData} />}
+      {tab === "programs" && <ProgramsTab data={data} setData={setData} />}
+      {tab === "history"  && <HistoryTab  data={data} setData={setData} />}
+      {tab === "goals"    && <GoalsTab    data={data} setData={setData} />}
+      {tab === "stats"    && <StatsTab    data={data} />}
+      <TabBar tab={tab} setTab={setTab} />
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+
+</body>
+</html>
